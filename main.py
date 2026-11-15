@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "9003328271:AAGkdnH3jVXe0WXJJhIv39bJVxQWemWliNA")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "8795006636"))   # твой Telegram ID
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "8795006636"))
 DB_PATH = os.environ.get("DB_PATH", "birthdays.db")
 NOTIFY_HOUR = 10
 NOTIFY_MINUTE = 0
@@ -33,9 +33,6 @@ MONTHS = {
     9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
 
-# ============================================================
-# ГОРОДА (все крупные города РФ по округам + другие страны)
-# ============================================================
 COUNTRIES = {
     "🇷🇺 Россия • Центральный ФО": [
         ("Москва", "Europe/Moscow", "🏛"),
@@ -438,13 +435,35 @@ def is_admin(user_id: int) -> bool:
     return ADMIN_ID != 0 and user_id == ADMIN_ID
 
 
-# ================= /start и проверка подписки =================
+# ================= /start — с умной логикой =================
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
+
     if not await ensure_subscribed(message, state):
         return
+
+    user = await get_user(message.from_user.id)
+    if user:
+        day, month, year, tz, notifications, is_banned = user
+        birth = date(year, month, day)
+        text = calculate_countdown(birth, tz)
+        text += f"\n\n🌍 Часовой пояс: `{tz}`"
+        if notifications:
+            text += (
+                f"\n🔔 Напоминания включены — каждый день в "
+                f"**{NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d}** по твоему времени"
+            )
+        else:
+            text += "\n🔕 Напоминания выключены — включи кнопкой ниже"
+        await message.answer(
+            text,
+            parse_mode="Markdown",
+            reply_markup=main_menu(bool(notifications))
+        )
+        return
+
     await message.answer(
         "🎂 Привет! Выбери **день** своего рождения:",
         reply_markup=days_keyboard(),
@@ -459,6 +478,20 @@ async def check_subs_handler(callback: CallbackQuery, state: FSMContext):
     if not_sub:
         await callback.answer("❌ Ты ещё не подписан на всех спонсоров", show_alert=True)
         return
+
+    user = await get_user(callback.from_user.id)
+    if user:
+        day, month, year, tz, notifications, is_banned = user
+        birth = date(year, month, day)
+        await callback.message.edit_text(
+            calculate_countdown(birth, tz)
+            + f"\n\n🌍 Часовой пояс: `{tz}`",
+            parse_mode="Markdown",
+            reply_markup=main_menu(bool(notifications))
+        )
+        await callback.answer("✅ Подписка подтверждена")
+        return
+
     await callback.message.edit_text(
         "✅ Спасибо за подписку!\n\n🎂 Выбери **день** своего рождения:",
         reply_markup=days_keyboard(),
@@ -762,7 +795,7 @@ async def reset(message: Message, state: FSMContext):
 async def help_cmd(message: Message):
     await message.answer(
         "📖 **Команды:**\n"
-        "/start — указать дату рождения и город\n"
+        "/start — открыть отсчёт / задать дату\n"
         "/my — показать сколько осталось\n"
         "/tz — изменить город/часовой пояс\n"
         "/notify — вкл/выкл ежедневные напоминания\n"
@@ -1182,7 +1215,7 @@ async def main():
     scheduler.start()
     print(f"Бот запущен. Напоминания в {NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d} по локальному времени каждого пользователя")
     if ADMIN_ID == 0:
-        print("⚠️ ADMIN_ID не задан — админ-панель отключена. Укажи ADMIN_ID в настройках.")
+        print("⚠️ ADMIN_ID не задан — админ-панель отключена.")
     await dp.start_polling(bot)
 
 
