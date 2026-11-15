@@ -13,11 +13,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiosqlite
-
 from zoneinfo import ZoneInfo
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "9003328271:AAGkdnH3jVXe0WXJJhIv39bJVxQWemWliNA")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "8795006636"))   # твой Telegram ID
 DB_PATH = os.environ.get("DB_PATH", "birthdays.db")
 NOTIFY_HOUR = 10
 NOTIFY_MINUTE = 0
@@ -34,14 +34,11 @@ MONTHS = {
 }
 
 # ============================================================
-# ВСЕ КРУПНЫЕ ГОРОДА РОССИИ (по федеральным округам)
-# Формат: страна/округ -> [(город, timezone, emoji), ...]
+# ГОРОДА (все крупные города РФ по округам + другие страны)
 # ============================================================
 COUNTRIES = {
-    # ===== РОССИЯ — ЦЕНТРАЛЬНЫЙ ФО (UTC+3) =====
     "🇷🇺 Россия • Центральный ФО": [
         ("Москва", "Europe/Moscow", "🏛"),
-        ("Санкт-Петербург", "Europe/Moscow", "🏛"),
         ("Белгород", "Europe/Moscow", "🏙"),
         ("Брянск", "Europe/Moscow", "🏙"),
         ("Владимир", "Europe/Moscow", "🏙"),
@@ -59,8 +56,6 @@ COUNTRIES = {
         ("Тула", "Europe/Moscow", "🏙"),
         ("Ярославль", "Europe/Moscow", "🏙"),
     ],
-
-    # ===== РОССИЯ — СЕВЕРО-ЗАПАДНЫЙ ФО =====
     "🇷🇺 Россия • Северо-Западный ФО": [
         ("Санкт-Петербург", "Europe/Moscow", "🏛"),
         ("Архангельск", "Europe/Moscow", "🏙"),
@@ -72,8 +67,6 @@ COUNTRIES = {
         ("Псков", "Europe/Moscow", "🏙"),
         ("Сыктывкар", "Europe/Moscow", "🏙"),
     ],
-
-    # ===== РОССИЯ — ЮЖНЫЙ ФО (UTC+3) =====
     "🇷🇺 Россия • Южный ФО": [
         ("Ростов-на-Дону", "Europe/Moscow", "🏙"),
         ("Краснодар", "Europe/Moscow", "🏙"),
@@ -84,8 +77,6 @@ COUNTRIES = {
         ("Сочи", "Europe/Moscow", "🌴"),
         ("Новороссийск", "Europe/Moscow", "🏙"),
     ],
-
-    # ===== РОССИЯ — СЕВЕРО-КАВКАЗСКИЙ ФО (UTC+3) =====
     "🇷🇺 Россия • Северо-Кавказский ФО": [
         ("Махачкала", "Europe/Moscow", "🏙"),
         ("Владикавказ", "Europe/Moscow", "🏙"),
@@ -96,9 +87,7 @@ COUNTRIES = {
         ("Магас", "Europe/Moscow", "🏙"),
         ("Пятигорск", "Europe/Moscow", "🏙"),
     ],
-
-    # ===== РОССИЯ — ПРИВОЛЖСКИЙ ФО =====
-    "🇷🇺 Россия • Приволжский ФО (МСК+0/МСК+1)": [
+    "🇷🇺 Россия • Приволжский ФО": [
         ("Нижний Новгород", "Europe/Moscow", "🏙"),
         ("Казань", "Europe/Moscow", "🕌"),
         ("Самара", "Europe/Samara", "🏙"),
@@ -114,9 +103,7 @@ COUNTRIES = {
         ("Чебоксары", "Europe/Moscow", "🏙"),
         ("Киров", "Europe/Kirov", "🏙"),
     ],
-
-    # ===== РОССИЯ — УРАЛЬСКИЙ ФО =====
-    "🇷🇺 Россия • Уральский ФО (МСК+2)": [
+    "🇷🇺 Россия • Уральский ФО": [
         ("Екатеринбург", "Asia/Yekaterinburg", "🏙"),
         ("Тюмень", "Asia/Yekaterinburg", "🏙"),
         ("Челябинск", "Asia/Yekaterinburg", "🏙"),
@@ -126,8 +113,6 @@ COUNTRIES = {
         ("Сургут", "Asia/Yekaterinburg", "🏙"),
         ("Нижневартовск", "Asia/Yekaterinburg", "🏙"),
     ],
-
-    # ===== РОССИЯ — СИБИРСКИЙ ФО (МСК+3…+6) =====
     "🇷🇺 Россия • Сибирский ФО": [
         ("Новосибирск", "Asia/Novosibirsk", "🏙"),
         ("Омск", "Asia/Omsk", "🏙"),
@@ -142,8 +127,6 @@ COUNTRIES = {
         ("Кызыл", "Asia/Krasnoyarsk", "🏙"),
         ("Горно-Алтайск", "Asia/Barnaul", "🏙"),
     ],
-
-    # ===== РОССИЯ — ДАЛЬНЕВОСТОЧНЫЙ ФО (МСК+6…+9) =====
     "🇷🇺 Россия • Дальневосточный ФО": [
         ("Владивосток", "Asia/Vladivostok", "🏙"),
         ("Хабаровск", "Asia/Vladivostok", "🏙"),
@@ -156,63 +139,29 @@ COUNTRIES = {
         ("Анадырь", "Asia/Anadyr", "🏙"),
         ("Чита", "Asia/Chita", "🏙"),
     ],
-
-    # ===== ДРУГИЕ СТРАНЫ =====
     "🇰🇿 Казахстан": [
         ("Алматы", "Asia/Almaty", "🏙"),
         ("Астана", "Asia/Almaty", "🏙"),
         ("Актобе", "Asia/Aqtobe", "🏙"),
         ("Атырау", "Asia/Atyrau", "🏙"),
     ],
-    "🇧🇾 Беларусь": [
-        ("Минск", "Europe/Minsk", "🏙"),
-        ("Гомель", "Europe/Minsk", "🏙"),
-        ("Брест", "Europe/Minsk", "🏙"),
-    ],
-    "🇺🇦 Украина": [
-        ("Киев", "Europe/Kyiv", "🏙"),
-        ("Харьков", "Europe/Kyiv", "🏙"),
-        ("Одесса", "Europe/Kyiv", "🏙"),
-        ("Львов", "Europe/Kyiv", "🏙"),
-    ],
-    "🇩🇪 Германия": [
-        ("Берлин", "Europe/Berlin", "🏙"),
-        ("Мюнхен", "Europe/Berlin", "🏙"),
-        ("Гамбург", "Europe/Berlin", "🏙"),
-        ("Кёльн", "Europe/Berlin", "🏙"),
-    ],
+    "🇧🇾 Беларусь": [("Минск", "Europe/Minsk", "🏙"), ("Гомель", "Europe/Minsk", "🏙")],
+    "🇺🇦 Украина": [("Киев", "Europe/Kyiv", "🏙"), ("Харьков", "Europe/Kyiv", "🏙")],
+    "🇩🇪 Германия": [("Берлин", "Europe/Berlin", "🏙"), ("Мюнхен", "Europe/Berlin", "🏙")],
     "🇺🇸 США": [
         ("Нью-Йорк", "America/New_York", "🗽"),
         ("Чикаго", "America/Chicago", "🏙"),
         ("Денвер", "America/Denver", "🏙"),
         ("Лос-Анджелес", "America/Los_Angeles", "🌴"),
-        ("Сиэтл", "America/Los_Angeles", "🏙"),
     ],
-    "🇬🇧 Великобритания": [
-        ("Лондон", "Europe/London", "🎡"),
-    ],
-    "🇹🇷 Турция": [
-        ("Стамбул", "Europe/Istanbul", "🕌"),
-        ("Анкара", "Europe/Istanbul", "🏙"),
-    ],
-    "🇨🇳 Китай": [
-        ("Пекин", "Asia/Shanghai", "🏯"),
-        ("Шанхай", "Asia/Shanghai", "🏙"),
-    ],
-    "🇯🇵 Япония": [
-        ("Токио", "Asia/Tokyo", "🗾"),
-    ],
-    "🇮🇳 Индия": [
-        ("Дели", "Asia/Kolkata", "🛕"),
-    ],
-    "🇦🇺 Австралия": [
-        ("Сидней", "Australia/Sydney", "🏄"),
-        ("Мельбурн", "Australia/Melbourne", "🏙"),
-    ],
-    "🌐 UTC": [
-        ("UTC (универсальное)", "UTC", "🌐"),
-    ],
+    "🇬🇧 Великобритания": [("Лондон", "Europe/London", "🎡")],
+    "🇹🇷 Турция": [("Стамбул", "Europe/Istanbul", "🕌")],
+    "🇨🇳 Китай": [("Пекин", "Asia/Shanghai", "🏯")],
+    "🇯🇵 Япония": [("Токио", "Asia/Tokyo", "🗾")],
+    "🇦🇺 Австралия": [("Сидней", "Australia/Sydney", "🏄")],
+    "🌐 UTC": [("UTC (универсальное)", "UTC", "🌐")],
 }
+
 
 # ================= БАЗА ДАННЫХ =================
 
@@ -226,15 +175,27 @@ async def init_db():
                 year INTEGER NOT NULL,
                 timezone TEXT DEFAULT 'UTC',
                 notifications INTEGER DEFAULT 1,
-                last_notify_date TEXT DEFAULT NULL
+                last_notify_date TEXT DEFAULT NULL,
+                is_banned INTEGER DEFAULT 0
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sponsors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                channel_title TEXT,
+                invite_link TEXT NOT NULL
             )
         """)
         async with db.execute("PRAGMA table_info(users)") as cur:
             cols = [r[1] for r in await cur.fetchall()]
-        if "timezone" not in cols:
-            await db.execute("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
-        if "last_notify_date" not in cols:
-            await db.execute("ALTER TABLE users ADD COLUMN last_notify_date TEXT DEFAULT NULL")
+        for col, ddl in [
+            ("timezone", "TEXT DEFAULT 'UTC'"),
+            ("last_notify_date", "TEXT DEFAULT NULL"),
+            ("is_banned", "INTEGER DEFAULT 0"),
+        ]:
+            if col not in cols:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
         await db.commit()
 
 
@@ -258,8 +219,8 @@ async def set_timezone(user_id: int, tz: str):
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT day, month, year, timezone, notifications FROM users WHERE user_id=?",
-            (user_id,)
+            "SELECT day, month, year, timezone, notifications, is_banned "
+            "FROM users WHERE user_id=?", (user_id,)
         ) as cur:
             return await cur.fetchone()
 
@@ -267,26 +228,23 @@ async def get_user(user_id: int):
 async def get_all_users():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT user_id, day, month, year, timezone, notifications, last_notify_date FROM users"
+            "SELECT user_id, day, month, year, timezone, notifications, "
+            "last_notify_date, is_banned FROM users"
         ) as cur:
             return await cur.fetchall()
 
 
 async def set_notifications(user_id: int, enabled: bool):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET notifications=? WHERE user_id=?",
-            (1 if enabled else 0, user_id)
-        )
+        await db.execute("UPDATE users SET notifications=? WHERE user_id=?",
+                         (1 if enabled else 0, user_id))
         await db.commit()
 
 
 async def mark_notified(user_id: int, day_str: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE users SET last_notify_date=? WHERE user_id=?",
-            (day_str, user_id)
-        )
+        await db.execute("UPDATE users SET last_notify_date=? WHERE user_id=?",
+                         (day_str, user_id))
         await db.commit()
 
 
@@ -294,6 +252,77 @@ async def delete_user(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM users WHERE user_id=?", (user_id,))
         await db.commit()
+
+
+# --- спонсоры ---
+async def add_sponsor(channel_id: str, title: str, link: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO sponsors (channel_id, channel_title, invite_link) VALUES (?, ?, ?)",
+            (channel_id, title, link)
+        )
+        await db.commit()
+
+
+async def remove_sponsor(sponsor_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM sponsors WHERE id=?", (sponsor_id,))
+        await db.commit()
+
+
+async def get_sponsors():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, channel_id, channel_title, invite_link FROM sponsors"
+        ) as cur:
+            return await cur.fetchall()
+
+
+# ================= ПРОВЕРКА ПОДПИСКИ =================
+
+async def check_subscriptions(user_id: int) -> list:
+    sponsors = await get_sponsors()
+    not_subscribed = []
+    for sid, channel_id, title, link in sponsors:
+        try:
+            member = await bot.get_chat_member(channel_id, user_id)
+            if member.status in ("left", "kicked"):
+                not_subscribed.append((sid, channel_id, title, link))
+        except Exception as e:
+            print(f"[subs] Ошибка проверки {channel_id}: {e}")
+            not_subscribed.append((sid, channel_id, title, link))
+    return not_subscribed
+
+
+def sponsors_keyboard(not_subscribed):
+    buttons = []
+    for sid, channel_id, title, link in not_subscribed:
+        buttons.append([InlineKeyboardButton(text=f"📢 {title}", url=link)])
+    buttons.append([InlineKeyboardButton(text="✅ Я подписался — проверить", callback_data="check_subs")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def ensure_subscribed(event, state: FSMContext) -> bool:
+    user_id = event.from_user.id
+    not_sub = await check_subscriptions(user_id)
+    if not not_sub:
+        return True
+
+    text = (
+        "🔒 **Чтобы пользоваться ботом, подпишись на спонсоров:**\n\n"
+        "После подписки нажми **«✅ Я подписался»**."
+    )
+    kb = sponsors_keyboard(not_sub)
+
+    if isinstance(event, CallbackQuery):
+        try:
+            await event.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await event.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="Markdown")
+    return False
 
 
 # ================= FSM =================
@@ -304,6 +333,16 @@ class BirthdayForm(StatesGroup):
     choosing_year = State()
     choosing_country = State()
     choosing_city = State()
+
+
+class AdminForm(StatesGroup):
+    waiting_broadcast = State()
+    waiting_ban_id = State()
+    waiting_unban_id = State()
+    waiting_user_info = State()
+    waiting_delete_id = State()
+    waiting_sponsor_channel = State()
+    waiting_sponsor_link = State()
 
 
 # ================= КЛАВИАТУРЫ =================
@@ -352,10 +391,6 @@ def years_keyboard(page: int = 0):
 
 
 def countries_keyboard():
-    """
-    Страны/округа. Callback не может содержать кириллицу/эмодзи надёжно,
-    поэтому используем индексы. Соответствие сохраняем в глобальном списке.
-    """
     buttons = []
     for idx, country in enumerate(COUNTRIES.keys()):
         buttons.append([InlineKeyboardButton(text=country, callback_data=f"country_{idx}")])
@@ -363,11 +398,6 @@ def countries_keyboard():
 
 
 def cities_keyboard(country: str):
-    """
-    Города страны/округа. Callback — индекс города в списке.
-    Название страны передаём через callback нельзя (кириллица), поэтому
-    будем хранить её в FSM data.
-    """
     buttons = []
     for idx, (city, tz, emoji) in enumerate(COUNTRIES[country]):
         buttons.append([InlineKeyboardButton(text=f"{emoji} {city}", callback_data=f"city_{idx}")])
@@ -384,11 +414,37 @@ def main_menu(notifications_on: bool):
     ])
 
 
-# ================= ХЕНДЛЕРЫ ВЫБОРА ДАТЫ =================
+def admin_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="adm_stats")],
+        [InlineKeyboardButton(text="📢 Рассылка всем", callback_data="adm_broadcast")],
+        [InlineKeyboardButton(text="👤 Инфо о юзере", callback_data="adm_userinfo")],
+        [InlineKeyboardButton(text="🚫 Забанить", callback_data="adm_ban")],
+        [InlineKeyboardButton(text="✅ Разбанить", callback_data="adm_unban")],
+        [InlineKeyboardButton(text="🗑 Удалить юзера", callback_data="adm_delete")],
+        [InlineKeyboardButton(text="📢 Спонсоры", callback_data="adm_sponsors")],
+    ])
+
+
+def sponsors_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить канал", callback_data="sp_add")],
+        [InlineKeyboardButton(text="📋 Список каналов", callback_data="sp_list")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="adm_back")],
+    ])
+
+
+def is_admin(user_id: int) -> bool:
+    return ADMIN_ID != 0 and user_id == ADMIN_ID
+
+
+# ================= /start и проверка подписки =================
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
+    if not await ensure_subscribed(message, state):
+        return
     await message.answer(
         "🎂 Привет! Выбери **день** своего рождения:",
         reply_markup=days_keyboard(),
@@ -397,14 +453,32 @@ async def start(message: Message, state: FSMContext):
     await state.set_state(BirthdayForm.choosing_day)
 
 
+@dp.callback_query(F.data == "check_subs")
+async def check_subs_handler(callback: CallbackQuery, state: FSMContext):
+    not_sub = await check_subscriptions(callback.from_user.id)
+    if not_sub:
+        await callback.answer("❌ Ты ещё не подписан на всех спонсоров", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "✅ Спасибо за подписку!\n\n🎂 Выбери **день** своего рождения:",
+        reply_markup=days_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.set_state(BirthdayForm.choosing_day)
+    await callback.answer("✅ Подписка подтверждена")
+
+
+# ================= ВЫБОР ДАТЫ =================
+
 @dp.callback_query(BirthdayForm.choosing_day, F.data.startswith("day_"))
 async def process_day(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(callback, state):
+        return
     day = int(callback.data.split("_")[1])
     await state.update_data(day=day)
     await callback.message.edit_text(
         f"📅 День: **{day}**\n\nТеперь выбери **месяц**:",
-        reply_markup=months_keyboard(),
-        parse_mode="Markdown"
+        reply_markup=months_keyboard(), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_month)
     await callback.answer()
@@ -416,9 +490,8 @@ async def process_month(callback: CallbackQuery, state: FSMContext):
     await state.update_data(month=month)
     data = await state.get_data()
     await callback.message.edit_text(
-        f"📅 Дата: **{data['day']} {MONTHS[month]}**\n\nТеперь выбери **год** рождения:",
-        reply_markup=years_keyboard(page=0),
-        parse_mode="Markdown"
+        f"📅 Дата: **{data['day']} {MONTHS[month]}**\n\nТеперь выбери **год**:",
+        reply_markup=years_keyboard(0), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_year)
     await callback.answer()
@@ -429,9 +502,8 @@ async def process_year_page(callback: CallbackQuery, state: FSMContext):
     page = int(callback.data.split("_")[1])
     data = await state.get_data()
     await callback.message.edit_text(
-        f"📅 Дата: **{data['day']} {MONTHS[data['month']]}**\n\nТеперь выбери **год** рождения:",
-        reply_markup=years_keyboard(page=page),
-        parse_mode="Markdown"
+        f"📅 Дата: **{data['day']} {MONTHS[data['month']]}**\n\nТеперь выбери **год**:",
+        reply_markup=years_keyboard(page), parse_mode="Markdown"
     )
     await callback.answer()
 
@@ -441,12 +513,11 @@ async def process_year(callback: CallbackQuery, state: FSMContext):
     year = int(callback.data.split("_")[1])
     data = await state.get_data()
     day, month = data["day"], data["month"]
-
     try:
         date(year, month, day)
     except ValueError:
         await callback.message.edit_text(
-            "❌ Такой даты не существует (например, 31 февраля).\nДавай заново — выбери день:",
+            "❌ Такой даты не существует. Заново — выбери день:",
             reply_markup=days_keyboard()
         )
         await state.set_state(BirthdayForm.choosing_day)
@@ -455,15 +526,12 @@ async def process_year(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(year=year)
     await callback.message.edit_text(
-        "🌍 Теперь выбери **регион/страну** (для определения часового пояса):",
-        reply_markup=countries_keyboard(),
-        parse_mode="Markdown"
+        "🌍 Теперь выбери **регион/страну**:",
+        reply_markup=countries_keyboard(), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_country)
     await callback.answer()
 
-
-# ================= ВЫБОР РЕГИОНА/ГОРОДА =================
 
 @dp.callback_query(BirthdayForm.choosing_country, F.data.startswith("country_"))
 async def process_country(callback: CallbackQuery, state: FSMContext):
@@ -472,8 +540,7 @@ async def process_country(callback: CallbackQuery, state: FSMContext):
     await state.update_data(country=country)
     await callback.message.edit_text(
         f"{country}\n\nВыбери **город**:",
-        reply_markup=cities_keyboard(country),
-        parse_mode="Markdown"
+        reply_markup=cities_keyboard(country), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_city)
     await callback.answer()
@@ -483,8 +550,7 @@ async def process_country(callback: CallbackQuery, state: FSMContext):
 async def back_countries(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "🌍 Выбери **регион/страну**:",
-        reply_markup=countries_keyboard(),
-        parse_mode="Markdown"
+        reply_markup=countries_keyboard(), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_country)
     await callback.answer()
@@ -496,15 +562,8 @@ async def process_city(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     country = data.get("country")
     if not country or country not in COUNTRIES:
-        await callback.answer("Ошибка, начни заново /start", show_alert=True)
-        return
-
-    cities = COUNTRIES[country]
-    if idx >= len(cities):
-        await callback.answer("Ошибка выбора города", show_alert=True)
-        return
-
-    city, tz, _ = cities[idx]
+        await callback.answer("Ошибка, начни заново /start", show_alert=True); return
+    city, tz, _ = COUNTRIES[country][idx]
 
     day, month, year = data["day"], data["month"], data["year"]
     await save_user(callback.from_user.id, day, month, year)
@@ -513,14 +572,12 @@ async def process_city(callback: CallbackQuery, state: FSMContext):
 
     birth = date(year, month, day)
     user = await get_user(callback.from_user.id)
-    notifications_on = bool(user[4])
-
     await callback.message.edit_text(
         calculate_countdown(birth, tz)
         + f"\n\n🌍 Город: **{city}** (`{tz}`)"
         + f"\n🔔 Напоминания каждый день в **{NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d}** по твоему времени!",
         parse_mode="Markdown",
-        reply_markup=main_menu(notifications_on)
+        reply_markup=main_menu(bool(user[4]))
     )
     await callback.answer("Готово! 🎉")
 
@@ -529,10 +586,11 @@ async def process_city(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "change_tz")
 async def change_tz(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(callback, state):
+        return
     await callback.message.edit_text(
         "🌍 Выбери **регион/страну**:",
-        reply_markup=countries_keyboard(),
-        parse_mode="Markdown"
+        reply_markup=countries_keyboard(), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_country)
     await callback.answer()
@@ -543,8 +601,7 @@ async def change_date(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(
         "🎂 Выбери **день** своего рождения:",
-        reply_markup=days_keyboard(),
-        parse_mode="Markdown"
+        reply_markup=days_keyboard(), parse_mode="Markdown"
     )
     await state.set_state(BirthdayForm.choosing_day)
     await callback.answer()
@@ -556,18 +613,14 @@ async def toggle_notify(callback: CallbackQuery):
     if not user:
         await callback.answer("Сначала укажи дату рождения через /start", show_alert=True)
         return
-
     new_state = not bool(user[4])
     await set_notifications(callback.from_user.id, new_state)
-
     birth = date(user[2], user[1], user[0])
     tz = user[3]
     status = "🔔 Напоминания включены" if new_state else "🔕 Напоминания выключены"
     await callback.message.edit_text(
-        calculate_countdown(birth, tz)
-        + f"\n\n🌍 Часовой пояс: `{tz}`\n{status}",
-        parse_mode="Markdown",
-        reply_markup=main_menu(new_state)
+        calculate_countdown(birth, tz) + f"\n\n🌍 Часовой пояс: `{tz}`\n{status}",
+        parse_mode="Markdown", reply_markup=main_menu(new_state)
     )
     await callback.answer(status)
 
@@ -580,7 +633,6 @@ def calc_next_bd(birth: date, tz: str):
     except Exception:
         tzinfo = ZoneInfo("UTC")
     today = datetime.now(tzinfo).date()
-
     try:
         next_bd = birth.replace(year=today.year)
     except ValueError:
@@ -605,7 +657,6 @@ def calculate_countdown(birth: date, tz: str = "UTC") -> str:
             f"Сегодня тебе исполнилось **{age}**!\n"
             f"Желаю всего самого лучшего! 🥳"
         )
-
     return (
         f"🎂 **Твоя дата:** {birth.strftime('%d.%m.%Y')}\n"
         f"🎉 **Ближайший ДР:** {next_bd.strftime('%d.%m.%Y')} (исполнится {age} лет)\n"
@@ -614,30 +665,24 @@ def calculate_countdown(birth: date, tz: str = "UTC") -> str:
     )
 
 
-# ================= ЕЖЕМИНУТНАЯ ПРОВЕРКА НАПОМИНАНИЙ =================
+# ================= ЕЖЕМИНУТНАЯ ПРОВЕРКА =================
 
 async def check_notifications():
     users = await get_all_users()
-
     for row in users:
-        user_id, day, month, year, tz, notifications, last_notify = row
-        if not notifications:
+        user_id, day, month, year, tz, notifications, last_notify, is_banned = row
+        if not notifications or is_banned:
             continue
-
         try:
             tzinfo = ZoneInfo(tz or "UTC")
         except Exception:
             tzinfo = ZoneInfo("UTC")
-
         now_local = datetime.now(tzinfo)
-
         if now_local.hour != NOTIFY_HOUR or now_local.minute != NOTIFY_MINUTE:
             continue
-
         today_str = now_local.date().isoformat()
         if last_notify == today_str:
             continue
-
         try:
             birth = date(year, month, day)
             next_bd, today = calc_next_bd(birth, tz)
@@ -657,7 +702,6 @@ async def check_notifications():
                     f"⏳ До твоего дня рождения осталось **{days_left}** дней\n"
                     f"🎂 Ближайший ДР: {next_bd.strftime('%d.%m.%Y')} (исполнится {age})"
                 )
-
             await bot.send_message(user_id, text, parse_mode="Markdown")
             await mark_notified(user_id, today_str)
             print(f"[notify] Отправлено {user_id} ({tz}, {days_left} дн.)")
@@ -668,22 +712,25 @@ async def check_notifications():
 # ================= КОМАНДЫ =================
 
 @dp.message(F.text == "/my")
-async def my_birthday(message: Message):
+async def my_birthday(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message, state):
+        return
     user = await get_user(message.from_user.id)
     if not user:
         await message.answer("Ты ещё не указал дату рождения. Напиши /start")
         return
-    day, month, year, tz, notifications = user
+    day, month, year, tz, notifications, is_banned = user
     birth = date(year, month, day)
     await message.answer(
         calculate_countdown(birth, tz) + f"\n\n🌍 Часовой пояс: `{tz}`",
-        parse_mode="Markdown",
-        reply_markup=main_menu(bool(notifications))
+        parse_mode="Markdown", reply_markup=main_menu(bool(notifications))
     )
 
 
 @dp.message(F.text == "/notify")
-async def notify_cmd(message: Message):
+async def notify_cmd(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message, state):
+        return
     user = await get_user(message.from_user.id)
     if not user:
         await message.answer("Сначала укажи дату рождения через /start")
@@ -694,54 +741,4 @@ async def notify_cmd(message: Message):
 
 
 @dp.message(F.text == "/tz")
-async def tz_cmd(message: Message, state: FSMContext):
-    await message.answer(
-        "🌍 Выбери **регион/страну**:",
-        reply_markup=countries_keyboard(),
-        parse_mode="Markdown"
-    )
-    await state.set_state(BirthdayForm.choosing_country)
-
-
-@dp.message(F.text == "/reset")
-async def reset(message: Message, state: FSMContext):
-    await state.clear()
-    await delete_user(message.from_user.id)
-    await message.answer("✅ Данные удалены. Напиши /start чтобы начать заново.")
-
-
-@dp.message(F.text == "/help")
-async def help_cmd(message: Message):
-    await message.answer(
-        "📖 **Команды:**\n"
-        "/start — указать дату рождения и город\n"
-        "/my — показать сколько осталось\n"
-        "/tz — изменить город/часовой пояс\n"
-        "/notify — вкл/выкл ежедневные напоминания\n"
-        "/reset — удалить данные\n\n"
-        f"🔔 Бот каждый день в **{NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d}** "
-        "по твоему часовому поясу присылает, сколько дней осталось до ДР, "
-        "и поздравляет в сам день рождения!",
-        parse_mode="Markdown"
-    )
-
-
-# ================= ЗАПУСК =================
-
-async def main():
-    await init_db()
-
-    scheduler.add_job(
-        check_notifications,
-        "cron",
-        minute="*",
-        id="notify_check"
-    )
-    scheduler.start()
-    print(f"Бот запущен. Напоминания в {NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d} по локальному времени каждого пользователя")
-
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def
