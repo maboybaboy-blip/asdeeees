@@ -741,4 +741,450 @@ async def notify_cmd(message: Message, state: FSMContext):
 
 
 @dp.message(F.text == "/tz")
-async def
+async def tz_cmd(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message, state):
+        return
+    await message.answer(
+        "🌍 Выбери **регион/страну**:",
+        reply_markup=countries_keyboard(), parse_mode="Markdown"
+    )
+    await state.set_state(BirthdayForm.choosing_country)
+
+
+@dp.message(F.text == "/reset")
+async def reset(message: Message, state: FSMContext):
+    await state.clear()
+    await delete_user(message.from_user.id)
+    await message.answer("✅ Данные удалены. Напиши /start чтобы начать заново.")
+
+
+@dp.message(F.text == "/help")
+async def help_cmd(message: Message):
+    await message.answer(
+        "📖 **Команды:**\n"
+        "/start — указать дату рождения и город\n"
+        "/my — показать сколько осталось\n"
+        "/tz — изменить город/часовой пояс\n"
+        "/notify — вкл/выкл ежедневные напоминания\n"
+        "/reset — удалить данные\n\n"
+        f"🔔 Бот каждый день в **{NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d}** "
+        "по твоему часовому поясу присылает, сколько дней осталось до ДР, "
+        "и поздравляет в сам день рождения!",
+        parse_mode="Markdown"
+    )
+
+
+# ================= АДМИН-ПАНЕЛЬ =================
+
+@dp.message(F.text == "/admin")
+async def admin_cmd(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ У тебя нет доступа.")
+        return
+    await state.clear()
+    await message.answer(
+        "🛠 **Админ-панель**\n\nВыбери действие:",
+        reply_markup=admin_menu(), parse_mode="Markdown"
+    )
+
+
+@dp.callback_query(F.data == "adm_back")
+async def adm_back(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await state.clear()
+    await callback.message.edit_text(
+        "🛠 **Админ-панель**\n\nВыбери действие:",
+        reply_markup=admin_menu(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_stats")
+async def adm_stats(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as cur:
+            total = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE notifications=1") as cur:
+            with_notify = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE is_banned=1") as cur:
+            banned = (await cur.fetchone())[0]
+    await callback.message.edit_text(
+        f"📊 **Статистика**\n\n"
+        f"👥 Всего юзеров: **{total}**\n"
+        f"🔔 С напоминаниями: **{with_notify}**\n"
+        f"🔕 Без напоминаний: **{total - with_notify}**\n"
+        f"🚫 Забанено: **{banned}**",
+        parse_mode="Markdown", reply_markup=admin_menu()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_broadcast")
+async def adm_broadcast_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text(
+        "📢 Введи текст для рассылки всем пользователям (можно Markdown):\n\n"
+        "Отправь /cancel чтобы отменить."
+    )
+    await state.set_state(AdminForm.waiting_broadcast)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_broadcast, F.text == "/cancel")
+async def adm_broadcast_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_broadcast)
+async def adm_broadcast_do(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.clear()
+    text = message.text
+    users = await get_all_users()
+    ok, fail = 0, 0
+    status = await message.answer(f"📤 Рассылаю {len(users)} юзерам...")
+    for row in users:
+        user_id = row[0]
+        is_banned = row[7]
+        if is_banned:
+            continue
+        try:
+            await bot.send_message(user_id, text, parse_mode="Markdown")
+            ok += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            fail += 1
+            print(f"[broadcast] {user_id}: {e}")
+    await status.edit_text(
+        f"✅ Рассылка завершена\n\n"
+        f"Отправлено: **{ok}**\n"
+        f"Ошибок: **{fail}**",
+        parse_mode="Markdown", reply_markup=admin_menu()
+    )
+
+
+@dp.callback_query(F.data == "adm_userinfo")
+async def adm_userinfo_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text(
+        "👤 Введи **user_id** пользователя:\n\n/cancel — отмена"
+    )
+    await state.set_state(AdminForm.waiting_user_info)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_user_info, F.text == "/cancel")
+async def adm_userinfo_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_user_info)
+async def adm_userinfo_do(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно число. Попробуй ещё раз или /cancel"); return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT day, month, year, timezone, notifications, last_notify_date, is_banned "
+            "FROM users WHERE user_id=?", (uid,)
+        ) as cur:
+            row = await cur.fetchone()
+    await state.clear()
+    if not row:
+        await message.answer(f"❌ Юзер {uid} не найден", reply_markup=admin_menu()); return
+    day, month, year, tz, notif, last, banned = row
+    await message.answer(
+        f"👤 **Юзер `{uid}`**\n\n"
+        f"🎂 Дата: **{day:02d}.{month:02d}.{year}**\n"
+        f"🌍 Таймзона: `{tz}`\n"
+        f"🔔 Напоминания: {'вкл' if notif else 'выкл'}\n"
+        f"🚫 Забанен: {'да' if banned else 'нет'}\n"
+        f"📅 Последнее напоминание: `{last or '—'}`",
+        parse_mode="Markdown", reply_markup=admin_menu()
+    )
+
+
+@dp.callback_query(F.data == "adm_ban")
+async def adm_ban_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text("🚫 Введи user_id для бана:\n\n/cancel — отмена")
+    await state.set_state(AdminForm.waiting_ban_id)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_ban_id, F.text == "/cancel")
+async def adm_ban_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_ban_id)
+async def adm_ban_do(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно число. Попробуй ещё раз или /cancel"); return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_banned=1 WHERE user_id=?", (uid,))
+        await db.commit()
+    await state.clear()
+    await message.answer(f"🚫 Юзер `{uid}` забанен", parse_mode="Markdown", reply_markup=admin_menu())
+
+
+@dp.callback_query(F.data == "adm_unban")
+async def adm_unban_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text("✅ Введи user_id для разбана:\n\n/cancel — отмена")
+    await state.set_state(AdminForm.waiting_unban_id)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_unban_id, F.text == "/cancel")
+async def adm_unban_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_unban_id)
+async def adm_unban_do(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно число. Попробуй ещё раз или /cancel"); return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_banned=0 WHERE user_id=?", (uid,))
+        await db.commit()
+    await state.clear()
+    await message.answer(f"✅ Юзер `{uid}` разбанен", parse_mode="Markdown", reply_markup=admin_menu())
+
+
+@dp.callback_query(F.data == "adm_delete")
+async def adm_delete_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text("🗑 Введи user_id для удаления:\n\n/cancel — отмена")
+    await state.set_state(AdminForm.waiting_delete_id)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_delete_id, F.text == "/cancel")
+async def adm_delete_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_delete_id)
+async def adm_delete_do(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно число. Попробуй ещё раз или /cancel"); return
+    await delete_user(uid)
+    await state.clear()
+    await message.answer(f"🗑 Юзер `{uid}` удалён", parse_mode="Markdown", reply_markup=admin_menu())
+
+
+# ================= СПОНСОРЫ (админ) =================
+
+@dp.callback_query(F.data == "adm_sponsors")
+async def adm_sponsors(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await state.clear()
+    await callback.message.edit_text(
+        "📢 **Управление спонсорами**\n\n"
+        "Бот должен быть **админом** в канале, чтобы проверять подписку!",
+        reply_markup=sponsors_menu(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "sp_add")
+async def sp_add_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    await callback.message.edit_text(
+        "📢 Отправь **ID канала** (например `-1001234567890`) "
+        "или **@username** (например `@my_channel`):\n\n"
+        "Узнать ID: перешли сообщение из канала боту @userinfobot.\n\n"
+        "/cancel — отмена"
+    )
+    await state.set_state(AdminForm.waiting_sponsor_channel)
+    await callback.answer()
+
+
+@dp.message(AdminForm.waiting_sponsor_channel, F.text == "/cancel")
+async def sp_add_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_sponsor_channel)
+async def sp_add_channel(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    raw = message.text.strip()
+
+    if raw.startswith("@"):
+        try:
+            chat = await bot.get_chat(raw)
+            channel_id = chat.id
+            title = chat.title or raw
+            invite_link = f"https://t.me/{raw.lstrip('@')}"
+        except Exception as e:
+            await message.answer(f"❌ Не смог получить канал: {e}\nПроверь username или /cancel")
+            return
+    else:
+        try:
+            channel_id = int(raw)
+        except ValueError:
+            await message.answer("❌ Нужен ID (число) или @username. Попробуй ещё раз или /cancel")
+            return
+        try:
+            chat = await bot.get_chat(channel_id)
+            title = chat.title or str(channel_id)
+            invite_link = chat.invite_link
+            if not invite_link:
+                username = chat.username
+                if username:
+                    invite_link = f"https://t.me/{username}"
+                else:
+                    await message.answer(
+                        "❌ У приватного канала нет username. "
+                        "Пришли ссылку на канал вручную (шаг 2)."
+                    )
+                    await state.update_data(pending_channel_id=channel_id, pending_title=title)
+                    await state.set_state(AdminForm.waiting_sponsor_link)
+                    return
+        except Exception as e:
+            await message.answer(f"❌ Не смог получить канал: {e}\nПроверь ID или /cancel")
+            return
+
+    await state.update_data(pending_channel_id=channel_id, pending_title=title)
+    await message.answer(
+        f"✅ Канал: **{title}** (`{channel_id}`)\n\n"
+        f"Теперь пришли **ссылку**, которую увидит пользователь "
+        f"(можно оставить предложенную: `{invite_link}`).\n\n"
+        f"Просто отправь ссылку или /skip для использования предложенной.",
+        parse_mode="Markdown"
+    )
+    await state.update_data(suggested_link=invite_link)
+    await state.set_state(AdminForm.waiting_sponsor_link)
+
+
+@dp.message(AdminForm.waiting_sponsor_link, F.text == "/cancel")
+async def sp_link_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_menu())
+
+
+@dp.message(AdminForm.waiting_sponsor_link)
+async def sp_add_link(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    channel_id = data.get("pending_channel_id")
+    title = data.get("pending_title", "Канал")
+    suggested = data.get("suggested_link")
+
+    if message.text.strip() == "/skip" and suggested:
+        link = suggested
+    elif message.text.strip().startswith("http"):
+        link = message.text.strip()
+    else:
+        await message.answer("❌ Пришли ссылку (http...) или /skip или /cancel")
+        return
+
+    await add_sponsor(str(channel_id), title, link)
+    await state.clear()
+    await message.answer(
+        f"✅ Спонсор добавлен:\n**{title}** — `{link}`",
+        parse_mode="Markdown", reply_markup=admin_menu()
+    )
+
+
+@dp.callback_query(F.data == "sp_list")
+async def sp_list(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    sponsors = await get_sponsors()
+    if not sponsors:
+        await callback.message.edit_text(
+            "📋 Спонсоров пока нет.",
+            reply_markup=sponsors_menu()
+        )
+        await callback.answer()
+        return
+
+    buttons = []
+    for sid, channel_id, title, link in sponsors:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🗑 {title}",
+                callback_data=f"sp_del_{sid}"
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="adm_sponsors")])
+    await callback.message.edit_text(
+        "📋 **Спонсоры** (нажми, чтобы удалить):",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("sp_del_"))
+async def sp_del(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True); return
+    sid = int(callback.data.split("_")[2])
+    await remove_sponsor(sid)
+    sponsors = await get_sponsors()
+    if not sponsors:
+        await callback.message.edit_text("📋 Спонсоров больше нет.", reply_markup=sponsors_menu())
+    else:
+        buttons = []
+        for s_id, channel_id, title, link in sponsors:
+            buttons.append([InlineKeyboardButton(text=f"🗑 {title}", callback_data=f"sp_del_{s_id}")])
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="adm_sponsors")])
+        await callback.message.edit_text(
+            "📋 **Спонсоры** (нажми, чтобы удалить):",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+            parse_mode="Markdown"
+        )
+    await callback.answer("Удалено")
+
+
+# ================= ЗАПУСК =================
+
+async def main():
+    await init_db()
+    scheduler.add_job(check_notifications, "cron", minute="*", id="notify_check")
+    scheduler.start()
+    print(f"Бот запущен. Напоминания в {NOTIFY_HOUR:02d}:{NOTIFY_MINUTE:02d} по локальному времени каждого пользователя")
+    if ADMIN_ID == 0:
+        print("⚠️ ADMIN_ID не задан — админ-панель отключена. Укажи ADMIN_ID в настройках.")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
